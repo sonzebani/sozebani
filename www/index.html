@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Sınıf Kütüphanesi</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="libs/jsQR.js"></script>
+<script src="libs/qrcode.min.js"></script>
+<script src="libs/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --paper:#F2EDE1; --ink:#1F2A44; --ink-soft:#4A5468;
+    --stamp:#B23A2E; --teal:#3C6E63; --line:#C9BFA4; --muted:#8A8267;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper);
+    background-image:repeating-linear-gradient(transparent, transparent 27px, var(--line) 28px);
+    color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh; padding-bottom:40px;
+    -webkit-user-select:none; user-select:none;
+  }
+  header{ padding:calc(20px + env(safe-area-inset-top)) 20px 18px; border-bottom:3px double var(--ink); background:var(--paper); }
+  header h1{ font-family:'Special Elite',cursive; font-size:1.4rem; margin:0 0 4px; }
+  header p{ margin:0; font-size:0.75rem; color:var(--muted); font-family:'Courier Prime',monospace; text-transform:uppercase; letter-spacing:1px; }
+  nav{ display:flex; margin:16px auto 0; max-width:640px; border:2px solid var(--ink); border-radius:4px; overflow:hidden; }
+  nav button{ flex:1; padding:10px 4px; background:var(--paper); border:none; border-right:1px solid var(--ink); font-family:'Courier Prime',monospace; font-weight:700; font-size:0.68rem; color:var(--ink-soft); text-transform:uppercase; }
+  nav button:last-child{border-right:none;}
+  nav button.active{ background:var(--ink); color:var(--paper); }
+  main{ max-width:640px; margin:24px auto; padding:0 20px; }
+  .card{ background:var(--paper); border:2px solid var(--ink); border-radius:6px; padding:18px; margin-bottom:16px; box-shadow:4px 4px 0 var(--line); }
+  .card h2{ font-family:'Special Elite',cursive; font-size:1rem; margin:0 0 12px; }
+  .row{ display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  input[type=text], select{ flex:1; min-width:120px; padding:10px 12px; border:1.5px solid var(--ink); border-radius:4px; background:#fff; font-size:0.95rem; color:var(--ink); }
+  input[type=file]{ flex:1; font-size:0.82rem; }
+  button.action{ padding:10px 16px; background:var(--teal); color:#fff; border:none; border-radius:4px; font-weight:600; font-size:0.88rem; white-space:nowrap; }
+  button.action.alt{ background:var(--ink-soft); }
+  ul.list{ list-style:none; margin:0; padding:0; }
+  ul.list li{ display:flex; justify-content:space-between; align-items:center; padding:9px 4px; border-bottom:1px dashed var(--line); font-size:0.9rem; }
+  ul.list li:last-child{border-bottom:none;}
+  .tag{ font-family:'Courier Prime',monospace; font-size:0.68rem; padding:2px 8px; border-radius:10px; border:1px solid currentColor; }
+  .tag.out{color:var(--stamp);} .tag.in{color:var(--teal);}
+  .small{ background:transparent; border:none; color:var(--muted); font-size:0.78rem; text-decoration:underline; }
+  video{ width:100%; max-width:400px; border:2px solid var(--ink); border-radius:6px; background:#000; }
+  #qrPrintArea{ display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; }
+  .qrCardMini{ border:1.5px dashed var(--ink); border-radius:4px; padding:8px; text-align:center; width:110px; font-family:'Courier Prime',monospace; font-size:0.66rem; }
+  .stampResult{ margin-top:14px; padding:14px; border:3px double var(--stamp); border-radius:4px; text-align:center; font-family:'Special Elite',cursive; color:var(--stamp); display:none; white-space:pre-line; }
+  .stampResult.show{display:block;}
+  .emptyState{ color:var(--muted); font-family:'Courier Prime',monospace; font-size:0.82rem; text-align:center; padding:20px 0; }
+  .hint{ font-size:0.76rem; color:var(--muted); margin-top:6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📚 Sınıf Kütüphane Kayıt Defteri</h1>
+  <p>QR Kod ile Ödünç Takip · Veriler telefonda saklanır</p>
+  <nav>
+    <button data-tab="scan" class="active">Ödünç/İade</button>
+    <button data-tab="books">Kitaplar</button>
+    <button data-tab="students">Öğrenciler</button>
+    <button data-tab="status">Durum</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-scan">
+    <div class="card">
+      <h2>1. Öğrenciyi Seçin</h2>
+      <select id="studentSelect"><option value="">— Öğrenci seçin —</option></select>
+    </div>
+    <div class="card" id="scanBox">
+      <h2>2. Kitabın QR Kodunu Okutun</h2>
+      <video id="video" playsinline></video>
+      <canvas id="canvas" style="display:none;"></canvas>
+      <p class="hint" id="scanStatus">Kamera başlatılıyor…</p>
+      <div class="stampResult" id="stampResult"></div>
+    </div>
+  </section>
+
+  <section id="tab-books" style="display:none;">
+    <div class="card">
+      <h2>Excel'den Toplu Kitap Ekle</h2>
+      <p class="hint">Sütunlar: "Kitap Adı" (veya "Ad"/"Title") ve isteğe bağlı "Yazar".</p>
+      <div class="row"><input type="file" id="bookExcel" accept=".xlsx,.xls,.csv"></div>
+      <div class="row"><button class="action alt" onclick="importBooksExcel()">Excel'i İçe Aktar</button></div>
+    </div>
+    <div class="card">
+      <h2>Tek Tek Kitap Ekle</h2>
+      <div class="row"><input type="text" id="bookTitle" placeholder="Kitap adı"></div>
+      <div class="row"><input type="text" id="bookAuthor" placeholder="Yazar (opsiyonel)"><button class="action" onclick="addBook()">Ekle</button></div>
+    </div>
+    <div class="card">
+      <h2>Kitap Listesi &amp; QR Kodları</h2>
+      <p class="hint">QR kodları yazdırıp kitapların içine yapıştırın.</p>
+      <ul class="list" id="bookList"></ul>
+      <div id="qrPrintArea"></div>
+    </div>
+  </section>
+
+  <section id="tab-students" style="display:none;">
+    <div class="card">
+      <h2>Excel'den Toplu Öğrenci Ekle</h2>
+      <p class="hint">Sütun: "Ad Soyad" (veya "İsim"/"Name"/"Öğrenci").</p>
+      <div class="row"><input type="file" id="studentExcel" accept=".xlsx,.xls,.csv"></div>
+      <div class="row"><button class="action alt" onclick="importStudentsExcel()">Excel'i İçe Aktar</button></div>
+    </div>
+    <div class="card">
+      <h2>Tek Tek Öğrenci Ekle</h2>
+      <div class="row"><input type="text" id="studentName" placeholder="Öğrenci adı soyadı"><button class="action" onclick="addStudent()">Ekle</button></div>
+    </div>
+    <div class="card">
+      <h2>Öğrenci Listesi</h2>
+      <ul class="list" id="studentList"></ul>
+    </div>
+  </section>
+
+  <section id="tab-status" style="display:none;">
+    <div class="card"><h2>Şu An Ödünçte Olan Kitaplar</h2><ul class="list" id="outList"></ul></div>
+    <div class="card"><h2>İşlem Geçmişi</h2><ul class="list" id="historyList"></ul></div>
+  </section>
+</main>
+
+<script>
+let students = JSON.parse(localStorage.getItem('lib_students')||'[]');
+let books = JSON.parse(localStorage.getItem('lib_books')||'[]');
+let loans = JSON.parse(localStorage.getItem('lib_loans')||'[]');
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function save(){
+  localStorage.setItem('lib_students', JSON.stringify(students));
+  localStorage.setItem('lib_books', JSON.stringify(books));
+  localStorage.setItem('lib_loans', JSON.stringify(loans));
+}
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+document.querySelectorAll('nav button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    ['scan','books','students','status'].forEach(t=>{
+      document.getElementById('tab-'+t).style.display = (t===btn.dataset.tab)?'block':'none';
+    });
+  });
+});
+
+// ---- STUDENTS ----
+function addStudent(){
+  const input = document.getElementById('studentName');
+  const name = input.value.trim();
+  if(!name) return;
+  students.push({id:uid(), name});
+  save(); input.value=''; renderStudents(); fillStudentSelect();
+}
+function removeStudent(id){ students = students.filter(s=>s.id!==id); save(); renderStudents(); fillStudentSelect(); }
+function renderStudents(){
+  const ul = document.getElementById('studentList');
+  ul.innerHTML = students.length? '' : '<div class="emptyState">Henüz öğrenci eklenmedi.</div>';
+  students.forEach(s=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${escapeHtml(s.name)}</span>`;
+    const btn = document.createElement('button'); btn.className='small'; btn.textContent='sil';
+    btn.onclick=()=>removeStudent(s.id); li.appendChild(btn); ul.appendChild(li);
+  });
+}
+function fillStudentSelect(){
+  const sel = document.getElementById('studentSelect'); const cur = sel.value;
+  sel.innerHTML = '<option value="">— Öğrenci seçin —</option>' + students.map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+  sel.value = cur;
+}
+
+// ---- BOOKS ----
+function addBook(){
+  const t = document.getElementById('bookTitle'); const a = document.getElementById('bookAuthor');
+  const title = t.value.trim(); if(!title) return;
+  books.push({id:uid(), title, author:a.value.trim()});
+  save(); t.value=''; a.value=''; renderBooks();
+}
+function removeBook(id){ books = books.filter(b=>b.id!==id); save(); renderBooks(); }
+function bookStatus(bookId){ return loans.find(l=>l.bookId===bookId && !l.returnAt) || null; }
+function renderBooks(){
+  const ul = document.getElementById('bookList');
+  ul.innerHTML = books.length? '' : '<div class="emptyState">Henüz kitap eklenmedi.</div>';
+  books.forEach(b=>{
+    const active = bookStatus(b.id);
+    const li = document.createElement('li');
+    const st = active ? `<span class="tag out">Ödünçte</span>` : `<span class="tag in">Rafta</span>`;
+    li.innerHTML = `<span>${escapeHtml(b.title)}${b.author?' <span style="color:var(--muted)">— '+escapeHtml(b.author)+'</span>':''}</span> ${st}`;
+    const btn = document.createElement('button'); btn.className='small'; btn.textContent='sil'; btn.style.marginLeft='8px';
+    btn.onclick=()=>removeBook(b.id); li.appendChild(btn); ul.appendChild(li);
+  });
+  renderQRCodes();
+}
+function renderQRCodes(){
+  const area = document.getElementById('qrPrintArea'); area.innerHTML='';
+  books.forEach(b=>{
+    const div = document.createElement('div'); div.className='qrCardMini';
+    const qrDiv = document.createElement('div'); div.appendChild(qrDiv);
+    const label = document.createElement('div'); label.style.marginTop='6px';
+    label.textContent = b.title.length>16? b.title.slice(0,14)+'…' : b.title;
+    div.appendChild(label); area.appendChild(div);
+    new QRCode(qrDiv, {text: 'BOOK:'+b.id, width:80, height:80});
+  });
+}
+
+// ---- EXCEL IMPORT ----
+function readWorkbook(file, cb){
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+    cb(rows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+function pickField(row, candidates){
+  const keys = Object.keys(row);
+  for(const c of candidates){
+    const k = keys.find(k=>k.toLowerCase().trim()===c);
+    if(k && String(row[k]).trim()) return String(row[k]).trim();
+  }
+  // fallback: first non-empty column
+  for(const k of keys){ if(String(row[k]).trim()) return String(row[k]).trim(); }
+  return '';
+}
+function importBooksExcel(){
+  const file = document.getElementById('bookExcel').files[0];
+  if(!file){ alert('Önce bir Excel dosyası seçin.'); return; }
+  readWorkbook(file, rows=>{
+    let count=0;
+    rows.forEach(row=>{
+      const title = pickField(row, ['kitap adı','kitap','ad','isim','title','name']);
+      const author = pickField(row, ['yazar','author']);
+      if(title){ books.push({id:uid(), title, author}); count++; }
+    });
+    save(); renderBooks();
+    alert(count+' kitap eklendi.');
+  });
+}
+function importStudentsExcel(){
+  const file = document.getElementById('studentExcel').files[0];
+  if(!file){ alert('Önce bir Excel dosyası seçin.'); return; }
+  readWorkbook(file, rows=>{
+    let count=0;
+    rows.forEach(row=>{
+      const name = pickField(row, ['ad soyad','öğrenci','ogrenci','ad','isim','name']);
+      if(name){ students.push({id:uid(), name}); count++; }
+    });
+    save(); renderStudents(); fillStudentSelect();
+    alert(count+' öğrenci eklendi.');
+  });
+}
+
+// ---- STATUS / HISTORY ----
+function renderStatus(){
+  const outUl = document.getElementById('outList');
+  const active = loans.filter(l=>!l.returnAt);
+  outUl.innerHTML = active.length? '' : '<div class="emptyState">Şu anda dışarıda kitap yok.</div>';
+  active.slice().reverse().forEach(l=>{
+    const book = books.find(b=>b.id===l.bookId); const student = students.find(s=>s.id===l.studentId);
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${escapeHtml(book?book.title:'?')} → <b>${escapeHtml(student?student.name:'?')}</b></span><span class="tag out">${new Date(l.checkoutAt).toLocaleDateString('tr-TR')}</span>`;
+    outUl.appendChild(li);
+  });
+  const histUl = document.getElementById('historyList');
+  histUl.innerHTML = loans.length? '' : '<div class="emptyState">Henüz işlem yok.</div>';
+  loans.slice().reverse().slice(0,40).forEach(l=>{
+    const book = books.find(b=>b.id===l.bookId); const student = students.find(s=>s.id===l.studentId);
+    const li = document.createElement('li');
+    const action = l.returnAt ? `İade — ${new Date(l.returnAt).toLocaleDateString('tr-TR')}` : `Alındı — ${new Date(l.checkoutAt).toLocaleDateString('tr-TR')}`;
+    li.innerHTML = `<span>${escapeHtml(book?book.title:'?')} • ${escapeHtml(student?student.name:'?')}</span><span class="tag ${l.returnAt?'in':'out'}">${action}</span>`;
+    histUl.appendChild(li);
+  });
+}
+
+// ---- QR SCANNING ----
+let scanning=false;
+const video=document.getElementById('video'), canvas=document.getElementById('canvas'), ctx=canvas.getContext('2d');
+const statusEl=document.getElementById('scanStatus');
+let lastScanTime=0;
+async function startCamera(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject=stream; video.setAttribute('playsinline',true); video.play();
+    statusEl.textContent='Kitabın QR kodunu kameraya gösterin.'; scanning=true; requestAnimationFrame(tick);
+  }catch(e){ statusEl.textContent='Kameraya erişilemedi. Uygulama izinlerini kontrol edin.'; }
+}
+function tick(){
+  if(!scanning) return;
+  if(video.readyState===video.HAVE_ENOUGH_DATA){
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const code=jsQR(imageData.data, imageData.width, imageData.height);
+    if(code && code.data && (Date.now()-lastScanTime>1800)){ lastScanTime=Date.now(); handleScan(code.data); }
+  }
+  requestAnimationFrame(tick);
+}
+function handleScan(data){
+  if(!data.startsWith('BOOK:')){ flashStamp('Geçersiz kod', false); return; }
+  const bookId=data.slice(5); const book=books.find(b=>b.id===bookId);
+  if(!book){ flashStamp('Bu kitap kayıtlı değil', false); return; }
+  const active=bookStatus(bookId);
+  if(active){
+    active.returnAt=new Date().toISOString(); save(); renderBooks(); renderStatus();
+    const student=students.find(s=>s.id===active.studentId);
+    flashStamp(`İADE ALINDI\n${book.title}\n(${student?student.name:''})`, true);
+    return;
+  }
+  const studentId=document.getElementById('studentSelect').value;
+  if(!studentId){ flashStamp('Önce öğrenci seçin!', false); return; }
+  const student=students.find(s=>s.id===studentId);
+  loans.push({id:uid(), bookId, studentId, checkoutAt:new Date().toISOString(), returnAt:null});
+  save(); renderBooks(); renderStatus();
+  flashStamp(`ÖDÜNÇ VERİLDİ\n${book.title}\n→ ${student.name}`, true);
+}
+let stampTimeout;
+function flashStamp(text, ok){
+  const el=document.getElementById('stampResult');
+  el.style.color = ok?'var(--teal)':'var(--stamp)'; el.style.borderColor = ok?'var(--teal)':'var(--stamp)';
+  el.innerText=text; el.classList.add('show');
+  clearTimeout(stampTimeout); stampTimeout=setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+startCamera();
+renderStudents(); renderBooks(); renderStatus(); fillStudentSelect();
+</script>
+</body>
+</html>
